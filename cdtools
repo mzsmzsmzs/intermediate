@@ -1,1 +1,13 @@
-comp
+Feature	Spinnaker	FluxCD	ArgoCD	Winner
+Setup Complexity	High	Medium	Low	ArgoCD
+Supported Deployment Models	Multi-cloud, hybrid	Kubernetes only	Kubernetes only	Spinnaker
+Ease of Use	Moderate	High	High	Tie: FluxCD, ArgoCD
+GitOps Support	Partial	Native	Native	Tie: FluxCD, ArgoCD
+User Interface (UI)	Comprehensive UI	CLI/Minimal UI	Rich UI	ArgoCD
+Performance	Slower for Kubernetes-focused tasks	Lightweight and fast	Lightweight and fast	Tie: FluxCD, ArgoCD
+Customization	High	Moderate	Moderate	Spinnaker
+Scalability	Highly scalable	Scalable	Scalable	Spinnaker
+Community Support	Moderate	Growing rapidly	Mature	ArgoCD
+Security Features	Extensive	Moderate	High	ArgoCD
+Integration Ecosystem	Wide (supports non-Kubernetes tools)	Kubernetes-native only	Kubernetes-native only	Spinnaker
+Rollback and Recovery	Supports advanced strategies	Basic	Advanced	ArgoCD
