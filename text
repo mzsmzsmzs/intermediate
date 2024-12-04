@@ -17,3 +17,32 @@ for file1 in "$dir1"/*.rpm; do
         fi
     done
 done
+
+
+
+
+#!/bin/bash
+
+dir1="/path/to/dir1"
+dir2="/path/to/dir2"
+output_file="matched_$(date +%Y%m%d_%H%M%S).txt"
+
+# Preprocess: Generate base names for both directories
+ls "$dir1"/*.rpm | xargs -n 1 basename | sed 's/-[0-9].*\.rpm//' > dir1_basenames.txt
+ls "$dir2"/*.rpm | xargs -n 1 basename | sed 's/-[0-9].*\.rpm//' > dir2_basenames.txt
+
+# Compare and find matches
+while read -r base; do
+    match_dir1=$(ls "$dir1"/*"$base"*.rpm 2>/dev/null)
+    match_dir2=$(ls "$dir2"/*"$base"*.rpm 2>/dev/null)
+
+    if [[ -n "$match_dir1" && -n "$match_dir2" ]]; then
+        echo "Match: $match_dir1 and $match_dir2" >> "$output_file"
+    fi
+done < <(comm -12 <(sort dir1_basenames.txt) <(sort dir2_basenames.txt))
+
+# Cleanup temporary files
+rm dir1_basenames.txt dir2_basenames.txt
+
+# Inform the user
+echo "Matches saved to $output_file"
