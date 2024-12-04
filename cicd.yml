@@ -1,0 +1,60 @@
+name: Java CI with Maven and CD to Linux Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: self-hosted  # Use your self-hosted runner
+
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Cache Maven dependencies
+      - name: Cache Maven dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      # Build with Maven
+      - name: Build with Maven
+        run: mvn clean install
+
+      # Optionally, run tests
+      - name: Run tests
+        run: mvn test
+
+  deploy:
+    runs-on: self-hosted  # Use your self-hosted runner
+
+    needs: build  # This makes sure the build job is complete before deploy starts
+
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Deploy the artifact to the remote server
+      - name: Deploy to Linux server via SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # Store the private SSH key in GitHub secrets
+        run: |
+          # Save the private key to a file
+          echo "$SSH_PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+
+          # Copy the JAR/WAR file to the remote server using scp (replace with the actual location of your artifact)
+          scp -i private_key.pem target/myapp.jar username@your-server-ip:/path/to/deploy/directory/
+
+          # Optionally, restart the service on the remote server (if using a service like systemd)
+          ssh -i private_key.pem username@your-server-ip 'sudo systemctl restart myapp.service'
+          
+          # Clean up the private key file
+          rm private_key.pem
