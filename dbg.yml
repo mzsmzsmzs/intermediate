@@ -1,0 +1,21 @@
+name: Debug Java CI
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+      
+      - name: Debug Environment
+        run: |
+          echo "Running debug"
+          echo "Java version:"
+          java -version
+          echo "Maven version:"
+          mvn -v
