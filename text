@@ -1,1 +1,19 @@
-comm -12 <(ls /path/to/dir1/*.rpm | xargs -n 1 basename | sed 's/-[0-9].*\.rpm//' | sort) <(ls /path/to/dir2/*.rpm | xargs -n 1 basename | sed 's/-[0-9].*\.rpm//' | sort)
+comm -12 <(ls /path/to/dir1/*.rpm | xargs-n 1 basename | sed 's/-[0-9].*\.rpm//' | sort) <(ls /path/to/dir2/*.rpm | xargs -n 1 basename | sed 's/-[0-9].*\.rpm//' | sort)
+
+
+
+
+
+#!/bin/bash
+
+dir1="/path/to/dir1"
+dir2="/path/to/dir2"
+
+for file1 in "$dir1"/*.rpm; do
+    base=$(basename "$file1" | sed 's/-[0-9].*\.rpm//')
+    for file2 in "$dir2"/*.rpm; do
+        if [[ $(basename "$file2" | sed 's/-[0-9].*\.rpm//') == "$base" ]]; then
+            echo "Match: $file1 and $file2"
+        fi
+    done
+done
