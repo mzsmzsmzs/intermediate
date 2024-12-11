@@ -84,3 +84,31 @@ join -j 1 <(sort rp_matches.txt) <(sort 9_matches.txt) > common_packages_with_ve
 rm rp_names.txt 9_names.txt common_names.txt rp_matches.txt 9_matches.txt
 
 echo "Output saved in common_packages_with_versions.txt"
+
+awk 'NR==FNR {
+    # Read common names into an array
+    names[$1]; 
+    next
+} {
+    # Extract package name until the first numeric character
+    match($0, /^[^0-9]*/);
+    pkg_name = substr($0, RSTART, RLENGTH);
+    # Print full line if the package name is in the common list
+    if (pkg_name in names) print pkg_name, "rpversion:", $0
+}' common_names.txt rpversion_patch.txt > rp_matches.txt
+awk 'NR==FNR {
+    # Read common names into an array
+    names[$1]; 
+    next
+} {
+    # Extract package name until the first numeric character
+    match($0, /^[^0-9]*/);
+    pkg_name = substr($0, RSTART, RLENGTH);
+    # Print full line if the package name is in the common list
+    if (pkg_name in names) print pkg_name, "9version:", $0
+}' common_names.txt 9version_patch.txt > 9_matches.txt
+
+
+
+
+
