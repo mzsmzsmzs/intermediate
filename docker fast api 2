@@ -1,0 +1,228 @@
+Here’s how you can set up a unit test case for your FastAPI application and create a GitHub Actions workflow to build, test, release (Docker), and deploy your application.
+
+1. Unit Test Case
+
+To test your FastAPI application, you can use pytest along with TestClient from FastAPI.
+
+Create a test_main.py File
+
+# test_main.py
+from fastapi.testclient import TestClient
+from app.main import app
+from app import models, database
+
+client = TestClient(app)
+
+# Dependency override to use an in-memory SQLite database for testing
+def override_get_db():
+    db = database.SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Replace the default database dependency with the override
+app.dependency_overrides[database.get_db] = override_get_db
+
+def test_create_employee():
+    # Test creating an employee
+    response = client.post("/employees/", json={
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "position": "Software Engineer",
+        "salary": 100000
+    })
+    assert response.status_code == 200
+    assert response.json()["name"] == "John Doe"
+    assert response.json()["email"] == "johndoe@example.com"
+
+def test_read_employee():
+    # First, create an employee
+    create_response = client.post("/employees/", json={
+        "name": "Jane Doe",
+        "email": "janedoe@example.com",
+        "position": "Product Manager",
+        "salary": 120000
+    })
+    employee_id = create_response.json()["id"]
+
+    # Now, get the created employee by ID
+    response = client.get(f"/employees/{employee_id}")
+    assert response.status_code == 200
+    assert response.json()["id"] == employee_id
+    assert response.json()["name"] == "Jane Doe"
+    assert response.json()["position"] == "Product Manager"
+
+def test_update_employee():
+    # First, create an employee
+    create_response = client.post("/employees/", json={
+        "name": "Alice Smith",
+        "email": "alice@example.com",
+        "position": "Designer",
+        "salary": 80000
+    })
+    employee_id = create_response.json()["id"]
+
+    # Now, update the employee
+    response = client.put(f"/employees/{employee_id}", json={
+        "name": "Alice Smith",
+        "email": "alice@example.com",
+        "position": "Senior Designer",
+        "salary": 90000
+    })
+    assert response.status_code == 200
+    assert response.json()["position"] == "Senior Designer"
+    assert response.json()["salary"] == 90000
+
+def test_delete_employee():
+    # First, create an employee
+    create_response = client.post("/employees/", json={
+        "name": "Bob Johnson",
+        "email": "bob@example.com",
+        "position": "HR",
+        "salary": 75000
+    })
+    employee_id = create_response.json()["id"]
+
+    # Now, delete the employee
+    response = client.delete(f"/employees/{employee_id}")
+    assert response.status_code == 200
+    assert response.json() == {"detail": "Employee deleted"}
+
+    # Verify the employee is deleted
+    response = client.get(f"/employees/{employee_id}")
+    assert response.status_code == 404
+
+Install pytest and pytest-asyncio
+
+Add pytest and pytest-asyncio as dependencies:
+
+pip install pytest pytest-asyncio
+
+Run the Tests
+
+To run the tests:
+
+pytest
+
+2. GitHub Actions Workflow for Build, Test, Release, and Deployment
+
+Create a GitHub Actions workflow to automate the process of building, testing, releasing (Docker), and deploying your FastAPI app.
+
+Create .github/workflows/docker.yml
+
+name: Build, Test, Release, and Deploy FastAPI App
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.10
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      # Step 4: Run tests
+      - name: Run tests
+        run: |
+          pytest --maxfail=1 --disable-warnings -q
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      # Step 1: Checkout code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # Step 3: Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Step 4: Build the Docker image
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/fastapi-crud:${{ github.sha }} .
+
+      # Step 5: Push the Docker image
+      - name: Push Docker image
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/fastapi-crud:${{ github.sha }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      # Step 1: Checkout code from the repository
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Deploy to the server (SSH deployment)
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USERNAME }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            docker pull ${{ secrets.DOCKER_USERNAME }}/fastapi-crud:${{ github.sha }}
+            docker stop fastapi-crud || true
+            docker rm fastapi-crud || true
+            docker run -d -p 8000:8000 --name fastapi-crud ${{ secrets.DOCKER_USERNAME }}/fastapi-crud:${{ github.sha }}
+
+Explanation of the Workflow:
+	1.	Build Job:
+	•	Checks out the code.
+	•	Sets up Python and installs dependencies.
+	•	Runs tests using pytest.
+	2.	Docker Job:
+	•	Checks out the code.
+	•	Sets up Docker and logs into Docker Hub using secrets (DOCKER_USERNAME and DOCKER_PASSWORD).
+	•	Builds the Docker image and pushes it to Docker Hub with a tag corresponding to the commit hash (github.sha).
+	3.	Deploy Job:
+	•	Checks out the code.
+	•	Deploys the Docker image to a remote server using SSH. It pulls the latest image, stops and removes the old container, and starts a new one.
+
+Secrets Setup for GitHub Actions:
+
+You need to configure the following secrets in your GitHub repository:
+	•	DOCKER_USERNAME — your Docker Hub username.
+	•	DOCKER_PASSWORD — your Docker Hub password or token.
+	•	SERVER_HOST — your server’s IP or hostname.
+	•	SERVER_USERNAME — your SSH username.
+	•	SERVER_PASSWORD — your SSH password (or use an SSH key if preferred).
+
+3. Conclusion
+
+With this setup:
+	1.	The tests for the FastAPI CRUD API will run automatically on every push to the main branch.
+	2.	The Docker image will be built, tagged, and pushed to Docker Hub.
+	3.	The application will be deployed to your server automatically after the Docker image is pushed.
+
+You can customize this workflow further for specific deployment platforms like AWS, Azure, or DigitalOcean.
