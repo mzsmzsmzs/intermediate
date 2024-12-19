@@ -1,0 +1,47 @@
+name: Deploy Notification Service
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Install dependencies in the runner (optional, just for verification)
+    - name: Install dependencies (optional)
+      run: |
+        cd notification_service
+        python3 -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # Copy code to external server
+    - name: Copy code to server
+      run: |
+        scp -r notification_service ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:~/notification_service
+
+    # SSH to deploy and run service
+    - name: Deploy on server
+      uses: appleboy/ssh-action@v0.1.8
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          cd ~/notification_service
+          
+          # Stop existing service if running
+          pkill -f 'uvicorn notification_service:app' || true
+          
+          # Install/update dependencies
+          python3 -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+          # Run the service
+          nohup uvicorn notification_service:app --host 0.0.0.0 --port 8001 > ~/notification_service.log 2>&1 &
