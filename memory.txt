@@ -1,0 +1,123 @@
+Yes, the described setup can be implemented in Python using FastAPI for microservices and Docker for containerization. Below is a demo code for the two services:
+
+Service 1: Resource Monitoring Service
+
+This service exposes an endpoint to show details about disk size and memory usage.
+
+# resource_service.py
+from fastapi import FastAPI
+import psutil
+
+app = FastAPI()
+
+@app.get("/resources")
+def get_resources():
+    memory = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+    return {
+        "memory": {
+            "total": memory.total,
+            "used": memory.used,
+            "percent": memory.percent,
+        },
+        "disk": {
+            "total": disk.total,
+            "used": disk.used,
+            "percent": disk.percent,
+        }
+    }
+
+Service 2: Alerting Service
+
+This service polls Service 1 periodically and triggers an alert if memory or disk usage exceeds 90%.
+
+# alert_service.py
+from fastapi import FastAPI, BackgroundTasks
+import requests
+import time
+
+app = FastAPI()
+ALERT_THRESHOLD = 90  # Percent
+
+def poll_resources():
+    while True:
+        try:
+            response = requests.get("http://resource-service:8000/resources")
+            if response.status_code == 200:
+                data = response.json()
+                memory_usage = data["memory"]["percent"]
+                disk_usage = data["disk"]["percent"]
+
+                if memory_usage > ALERT_THRESHOLD or disk_usage > ALERT_THRESHOLD:
+                    print("ALERT: High resource usage detected!")
+                    print(f"Memory: {memory_usage}%, Disk: {disk_usage}%")
+        except Exception as e:
+            print(f"Error polling resources: {e}")
+        time.sleep(10)  # Poll every 10 seconds
+
+@app.on_event("startup")
+def startup_event():
+    from threading import Thread
+    thread = Thread(target=poll_resources, daemon=True)
+    thread.start()
+
+Dockerization
+
+You can Dockerize these services using the following Dockerfile and docker-compose.yml.
+
+Dockerfile
+
+# Dockerfile
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["uvicorn", "resource_service:app", "--host", "0.0.0.0", "--port", "8000"]
+
+requirements.txt
+
+fastapi
+uvicorn
+psutil
+requests
+
+docker-compose.yml
+
+version: "3.9"
+
+services:
+  resource-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: resource-service
+    ports:
+      - "8000:8000"
+
+  alert-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alert-service
+    command: ["uvicorn", "alert_service:app", "--host", "0.0.0.0", "--port", "8001"]
+    depends_on:
+      - resource-service
+    ports:
+      - "8001:8001"
+
+Run the Microservices
+	1.	Build and run the Docker containers:
+
+docker-compose up --build
+
+
+	2.	Access the resource service at http://localhost:8000/resources.
+
+The alert service will run in the background, continuously polling the resource service and printing alerts if usage exceeds 90%.
+
+Let me know if you need further assistance!
