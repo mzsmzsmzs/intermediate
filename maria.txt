@@ -117,3 +117,38 @@ Regular integrity checks should be performed on database data.
 Periodic failover testing should be conducted to ensure HA readiness.
 
 This document provides a structured approach to upgrading MariaDB in the PIM service while ensuring data integrity, high availability, and minimal downtime.
+
+
+Backward Compatibility Considerations
+Database Schema Compatibility
+
+Verify that table structures, data types, and indexes remain compatible between MariaDB 10.6 and 11.4.
+Check for any deprecated features in 11.4 that might impact existing queries or stored procedures.
+SQL Query Compatibility
+
+Ensure that existing SQL queries, functions, and triggers execute without modification.
+Identify and modify any queries that use syntax deprecated in MariaDB 11.4.
+Replication & Galera Cluster Compatibility
+
+Ensure that Galera replication settings in MariaDB 11.4 align with those in 10.6.
+Test failover and node synchronization behavior under the new version.
+Authentication & Security Policies
+
+Verify that user roles, privileges, and authentication plugins work correctly post-upgrade.
+Check if password hashing mechanisms have changed, requiring updates to application authentication.
+Storage Engine & Configuration Changes
+
+Confirm that the same storage engines (e.g., InnoDB, Aria, MyRocks) function without requiring modifications.
+Review and update configuration files (my.cnf) to align with new performance optimizations.
+Application Compatibility
+
+Validate that applications interfacing with MariaDB (via JDBC, ODBC, or ORM frameworks) continue working without errors.
+Monitor for changes in default timeouts, connection handling, and session variables.
+Performance & Indexing Impact
+
+Assess changes in query execution plans and indexing behavior that might affect performance.
+Optimize queries if the execution plan differs significantly between versions.
+Rollback Plan
+
+Ensure that a rollback plan is in place in case MariaDB 11.4 introduces critical issues.
+Maintain backups of MariaDB 10.6 data and configurations to facilitate a quick downgrade if needed.
