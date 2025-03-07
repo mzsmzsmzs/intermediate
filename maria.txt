@@ -1,0 +1,119 @@
+Design Document: MariaDB Upgrade in PIM Service
+
+1. Design Objective
+
+The objective of this document is to outline the upgrade process of MariaDB in the PIM service from version 10.6 to MariaDB 11.4 Enterprise on a new RHEL 8.x environment. The upgrade will be performed using scripts and RPM packages, ensuring high availability (HA) through Galera clustering managed by pcs. The existing database will be backed up and restored in the new virtual machine (VM) while maintaining data integrity and service continuity.
+
+2. Assumptions & Dependencies
+
+Assumptions:
+
+The new RHEL 8.x system will be freshly installed and configured.
+
+The MariaDB 11.4 Enterprise RPMs are available and properly tested.
+
+Galera clustering will be used for HA, and its dependencies will be pre-installed.
+
+pcs will be configured correctly for HA cluster management.
+
+The old MariaDB 10.6 database will be backed up before starting the upgrade.
+
+The backup can be successfully restored in MariaDB 11.4.
+
+Proper access permissions and firewall rules will be configured for database communication.
+
+Service downtime during the transition will be minimal and planned.
+
+Dependencies:
+
+MariaDB Enterprise 11.4 RPMs.
+
+Galera Cluster and pcs for HA configuration.
+
+Backup tools such as mysqldump or mariadb-backup.
+
+Script to automate installation and configuration.
+
+Network connectivity for cluster synchronization.
+
+3. Constraints
+
+The upgrade must be completed with minimal downtime.
+
+Compatibility issues between MariaDB 10.6 and 11.4 must be accounted for.
+
+The application must be tested for compatibility with MariaDB 11.4.
+
+HA setup using Galera must be validated and operational before going live.
+
+The database restoration process must ensure data integrity and consistency.
+
+Sufficient resources must be available on the new VM to accommodate increased performance demands.
+
+4. Functional Design
+
+The upgrade process consists of the following functional components:
+
+Installation & Upgrade Process
+
+Set up a new RHEL 8.x VM.
+
+Install MariaDB 11.4 Enterprise version via RPMs.
+
+Configure MariaDB with necessary parameters for compatibility and security.
+
+Restore the backup from MariaDB 10.6 into the new instance.
+
+Validate database integrity and performance post-restoration.
+
+High Availability (HA) Setup
+
+Install and configure Galera Cluster.
+
+Set up pcs to manage MariaDB HA.
+
+Enable synchronous replication across nodes.
+
+Configure failover mechanisms and monitor the cluster health.
+
+Backup & Restore Process
+
+Take a full backup of the MariaDB 10.6 database.
+
+Transfer backup files to the new environment.
+
+Restore the backup in MariaDB 11.4.
+
+Perform consistency checks and optimize the database post-restoration.
+
+5. Behavioral Design
+
+The system behavior during and after the upgrade should follow these principles:
+
+Normal Operation
+
+The upgraded database should function seamlessly with existing applications.
+
+Data consistency should be maintained across all cluster nodes.
+
+HA should be achieved through Galera and pcs.
+
+Failure Scenarios & Recovery
+
+If the backup restoration fails, revert to the old database until the issue is resolved.
+
+If a cluster node fails, automatic failover should ensure service continuity.
+
+If replication issues occur, logs and monitoring tools should be used for troubleshooting.
+
+Regular snapshots and incremental backups should be configured for rollback options.
+
+Monitoring & Maintenance
+
+Logs and alerts should be set up for database performance monitoring.
+
+Regular integrity checks should be performed on database data.
+
+Periodic failover testing should be conducted to ensure HA readiness.
+
+This document provides a structured approach to upgrading MariaDB in the PIM service while ensuring data integrity, high availability, and minimal downtime.
