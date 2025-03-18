@@ -1,0 +1,15 @@
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class MouseMover {
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+}
+"@ -PassThru
+
+while ($true) {
+    [MouseMover]::SetCursorPos(600, 600)  # Moves to (600,600)
+    Start-Sleep -Seconds 5
+    [MouseMover]::SetCursorPos(605, 605)  # Moves slightly
+    Start-Sleep -Seconds 5
+}
