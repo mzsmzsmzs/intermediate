@@ -1,0 +1,5 @@
+while ($true) {
+    $pos = [System.Windows.Input.Mouse]::Position
+    [System.Windows.Input.Mouse]::MoveTo($pos.X + 1, $pos.Y)
+    Start-Sleep -Seconds 5
+}
