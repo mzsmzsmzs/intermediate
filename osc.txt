@@ -1,0 +1,354 @@
+package com.samsung.cms.openstack.compute.internal;
+
+import static com.google.common.base.Preconditions.checkNotNull;
+
+import java.util.List;
+import java.util.Map;
+
+import com.samsung.cms.common.annotation.Service;
+import com.samsung.cms.common.transport.internal.Executor;
+import com.samsung.cms.common.utils.JsonMapper;
+import com.samsung.cms.openstack.api.Builders;
+import com.samsung.cms.openstack.api.compute.OsService;
+import com.samsung.cms.openstack.compute.domain.NovaAggregate;
+import com.samsung.cms.openstack.compute.domain.NovaAggregate.Aggregates;
+import com.samsung.cms.openstack.compute.domain.NovaComputeService;
+import com.samsung.cms.openstack.compute.domain.NovaComputeService.ComputeServices;
+import com.samsung.cms.openstack.compute.domain.NovaHost;
+import com.samsung.cms.openstack.compute.domain.NovaHost.Hosts;
+import com.samsung.cms.openstack.compute.domain.NovaHypervisor;
+import com.samsung.cms.openstack.compute.domain.NovaHypervisor.Hypervisors;
+import com.samsung.cms.openstack.compute.domain.NovaHypervisorStatistics;
+import com.samsung.cms.openstack.compute.domain.NovaVolumeAttachment;
+import com.samsung.cms.openstack.compute.domain.NovaVolumeAttachment.VolumeAttachments;
+import com.samsung.cms.openstack.compute.domain.functions.HostResourceFunction;
+import com.samsung.cms.openstack.compute.domain.functions.HypervisorResourceFunction;
+import com.samsung.cms.openstack.model.common.NovaVersion;
+import com.samsung.cms.openstack.model.common.NovaVersion.NovaVersions;
+import com.samsung.cms.openstack.model.compute.Aggregate;
+import com.samsung.cms.openstack.model.compute.AggregateCreate;
+import com.samsung.cms.openstack.model.compute.Host;
+import com.samsung.cms.openstack.model.compute.Hypervisor;
+import com.samsung.cms.openstack.model.compute.HypervisorStatistics;
+import com.samsung.cms.openstack.model.compute.Resource;
+import com.samsung.cms.openstack.model.compute.VolumeAttachment;
+
+@Service(OsService.class)
+public class OsServiceImpl extends BaseComputeServices implements OsService {
+	/**
+	 * {@inheritDoc}}
+	 */
+	@Override
+	public List<? extends Aggregate> listAggregates(String uuid) {
+		return get(Aggregates.class, uri("/os-aggregates"))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute().getList();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Aggregate getAggregate(String uuid, String aggregateId) {
+		checkNotNull(aggregateId);
+		return get(NovaAggregate.class, uri("/os-aggregates/%s", aggregateId))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Aggregate createAggregate(String uuid, AggregateCreate aggregate) {
+		checkNotNull(aggregate);
+		return post(NovaAggregate.class, uri("/os-aggregates")).entity(aggregate)
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Aggregate updateAggregate(String uuid, String aggregateId, AggregateCreate aggregate) {
+		checkNotNull(aggregateId);
+		checkNotNull(aggregate);
+		return put(NovaAggregate.class, uri("/os-aggregates/%s", aggregateId)).entity(aggregate)
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Aggregate addHostToAggregate(String uuid, String aggregateId, String hostName) {
+		checkNotNull(aggregateId);
+		checkNotNull(hostName);
+		return post(NovaAggregate.class, uri("/os-aggregates/%s/action", aggregateId))
+				.json(JsonMapper.makeJson("add_host", "host", hostName))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void deleteAggregate(String uuid, String aggregateId) {
+		checkNotNull(aggregateId);
+		delete(Void.class, uri("/os-aggregates/%s", aggregateId))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Aggregate removeHostFromAggregate(String uuid, String aggregateId, String hostName) {
+		checkNotNull(aggregateId);
+		checkNotNull(hostName);
+		return post(NovaAggregate.class, uri("/os-aggregates/%s/action", aggregateId))
+				.json(JsonMapper.makeJson("remove_host", "host", hostName))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Aggregate setAggregateMetadata(String uuid, String aggregateId, Map<String, String> metadata) {
+		checkNotNull(aggregateId);
+		checkNotNull(metadata);
+		try {
+			return post(NovaAggregate.class, uri("/os-aggregates/%s/action", aggregateId))
+					.json(JsonMapper.makeJson("set_metadata", "metadata", metadata))
+					.tag(Executor.TAG_UUID, uuid)
+					.execute();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public List<? extends Host> listHosts(String uuid, String service, String zone) {
+		StringBuilder url = new StringBuilder("/os-hosts");
+		return get(Hosts.class, uri(url.toString())).param("service", service).param("zone", zone)
+				.tag(Executor.TAG_UUID, uuid)
+				.execute().getList();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@SuppressWarnings("unchecked")
+	@Override
+	public List<? extends Resource> getHost(String uuid, String hostname) {
+		checkNotNull(hostname);
+		return get(List.class, uri("/os-hosts/%s", hostname))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute(HostResourceFunction.instance());
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Host setHostMaintanence(String uuid, String hostname, boolean isStatus, boolean isMaintenanceMode) {
+		checkNotNull(hostname);
+		String status = isStatus ? "enable" : "disable";
+		String maintenanceMode = isMaintenanceMode ? "enable" : "disable";
+		return put(NovaHost.class, uri("/os-hosts/%s", hostname))
+				.json(JsonMapper.makeJsonObject("status", status, "maintenance_mode", maintenanceMode))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Host startHost(String uuid, String hostname) {
+		checkNotNull(hostname);
+		return get(NovaHost.class, uri("/os-hosts/%s/startup", hostname))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Host shutdownHost(String uuid, String hostname) {
+		checkNotNull(hostname);
+		return get(NovaHost.class, uri("/os-hosts/%s/shutdown", hostname))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Host rebootHost(String uuid, String hostname) {
+		checkNotNull(hostname);
+		return get(NovaHost.class, uri("/os-hosts/%s/reboot", hostname))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public List<? extends Hypervisor> listHypervisors(String uuid, boolean isDetail) {
+		String url = null;
+		if (isDetail) {
+			url = "/os-hypervisors/detail";
+		} else {
+			url = "/os-hypervisors";
+		}
+		return get(Hypervisors.class, uri(url))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute(HypervisorResourceFunction.instance()).getList();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public HypervisorStatistics getHypervisorStatistics(String uuid) {
+		return get(NovaHypervisorStatistics.class, uri("/os-hypervisors/statistics"))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public Hypervisor getHypervisorUptime(String uuid, String hypervisorHostName) {
+		checkNotNull(hypervisorHostName);
+		return get(NovaHypervisor.class, uri("/os-hypervisors/%s", hypervisorHostName))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public List<? extends Hypervisor> listHypervisorInstance(String uuid, String hypervisorHostName) {
+		checkNotNull(hypervisorHostName);
+		return get(Hypervisors.class, uri("/os-hypervisors/%s/servers", hypervisorHostName))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute().getList();
+	}
+	
+	@Override
+	public String listAvailabilityZone(String uuid) {
+		return get(String.class, uri("/os-availability-zone/detail"))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	@Override
+	public VolumeAttachment attachVolume(String uuid, String serverId, String volumeId, String device) {
+		return post(NovaVolumeAttachment.class, uri("/servers/%s/os-volume_attachments", serverId))
+				.entity(Builders.volumeAttachment().serverId(serverId).volumeId(volumeId).device(device).build())
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	@Override
+	public void detachVolume(String uuid, String serverId, String attachmentId) {
+		delete(Void.class, uri("/servers/%s/os-volume_attachments/%s", serverId, attachmentId))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	@Override
+	public List<? extends NovaVolumeAttachment> listVolumeAttatchment(String uuid, String serverId) {
+		return get(VolumeAttachments.class, uri("/servers/%s/os-volume_attachments", serverId))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute().getList();
+	}
+	
+	@Override
+	public NovaVolumeAttachment getVolumeAttatchment(String uuid, String serverId, String attachmentId) {
+		return get(NovaVolumeAttachment.class, uri("/servers/%s/os-volume_attachments/%s", serverId, attachmentId))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	@Override
+	public void detachPort(String uuid, String serverId, String portId) {
+		delete(Void.class, uri("/servers/%s/os-interface/%s", serverId, portId))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	//************************************************************
+	// Manage Services (os-services)
+	//************************************************************
+	@Override
+	public List<? extends NovaComputeService> listComputeServices(String uuid) {
+		return get(ComputeServices.class, uri("/os-services"))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute().getList();
+	}
+	
+	@Override
+	public List<? extends NovaComputeService> listComputeServices(String uuid, String binary) {
+		return get(ComputeServices.class, uri("/os-services"))
+				.tag(Executor.TAG_UUID, uuid)
+				.param("binary", binary)
+				.execute().getList();
+	}
+	
+	@Override
+	public List<? extends NovaComputeService> listDisabledComputeServices(String uuid) {
+		return get(ComputeServices.class, uri("/os-services/detail"))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute().getList();
+	}
+	
+	@Override
+	public NovaComputeService enableComputeService(String uuid, String host, String binary) {
+		return put(NovaComputeService.class, uri("/os-services/enable"))
+				.json(JsonMapper.makeJson(Builders.computeService().host(host).binary(binary).build()))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	@Override
+	public NovaComputeService disableComputeService(String uuid, String host, String binary) {
+		return put(NovaComputeService.class, uri("/os-services/disable"))
+				.json(JsonMapper.makeJson(Builders.computeService().host(host).binary(binary).build()))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+	
+	@Override
+	public NovaComputeService disableComputeService(String uuid, String host, String binary, String disabledReason) {
+		return put(NovaComputeService.class, uri("/os-services/disable-log-reason"))
+				.json(JsonMapper.makeJson(Builders.computeService().host(host).binary(binary)
+								.disabledReason(disabledReason).build()))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute();
+	}
+
+	@Override
+	public List<NovaVersion> discoverVersions(String uuid) {
+		return get(NovaVersions.class, uri("/"))
+				.tag(Executor.TAG_UUID, uuid)
+				.execute().getList();
+	}
+}
