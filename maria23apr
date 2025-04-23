@@ -1,0 +1,17 @@
+mariadb.repo
+
+[MariaDB]
+name = MariaDB
+baseurl = file:///mnt/MariaDB
+gpgkey = https://supplychain.mariadb.com/MariaDB-Server-GPG-KEY
+gpgcheck = 0
+enabled = 1
+module_hotfixes = 1
+
+command to install
+
+  echo ${SUDO_PWD} | sudo -S cp -rp ./app /mnt/MariaDB >> $INSTALL_LOG 2>&1
+  echo ${SUDO_PWD} | sudo -S chmod 755 -R /mnt/MariaDB/setup_repository >> $INSTALL_LOG 2>&1
+  echo ${SUDO_PWD} | sudo -S /mnt/MariaDB/setup_repository >> $INSTALL_LOG 2>&1
+
+yum install -y MariaDB
