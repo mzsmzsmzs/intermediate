@@ -1,0 +1,22 @@
+
+[zeeshan.s@buildfarm83 ux]$ npm cache clean --force
+npm WARN using --force I sure hope you know what you are doing.
+[zeeshan.s@buildfarm83 ux]$ npm install
+npm ERR! code EPROTO
+npm ERR! errno EPROTO
+npm ERR! request to https://registry.npmjs.org/nightwatch failed, reason: write EPROTO 139961957762944:error:1408F10B:SSL routines:ssl3_get_record:wrong version number:../deps/openssl/openssl/ssl/record/ssl3_record.c:252:
+npm ERR!
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /home/zeeshan.s/.npm/_logs/2025-04-28T08_42_30_480Z-debug.log
+[zeeshan.s@buildfarm83 ux]$ ping https://registry.npmjs.org
+ping: https://registry.npmjs.org: Name or service not known
+[zeeshan.s@buildfarm83 ux]$ npm config set strict-ssl false
+[zeeshan.s@buildfarm83 ux]$ npm install
+npm ERR! code EPROTO
+npm ERR! errno EPROTO
+npm ERR! request to https://registry.npmjs.org/cucumber-pretty failed, reason: write EPROTO 140017350723456:error:1408F10B:SSL routines:ssl3_get_record:wrong version number:../deps/openssl/openssl/ssl/record/ssl3_record.c:252:
+npm ERR!
+
+npm ERR! A complete log of this run can be found in:
+npm ERR!     /home/zeeshan.s/.npm/_logs/2025-04-28T08_43_09_802Z-debug.log
