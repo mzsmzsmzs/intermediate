@@ -1,0 +1,107 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vnfbackups.kubevirt.io
+spec:
+  group: kubevirt.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                vmName:
+                  type: string
+                storageLocation:
+                  type: string
+                status:
+                  type: string
+  scope: Namespaced
+  names:
+    plural: vnfbackups
+    singular: vnfbackup
+    kind: VNFBackup
+    shortNames:
+    - vnb
+
+kubectl apply -f vnfbackup-crd.yaml
+
+apiVersion: kubevirt.io/v1alpha1
+kind: VNFBackup
+metadata:
+  name: backup-vm1
+spec:
+  vmName: my-virtualmachine
+  storageLocation: s3://mybucket/vm1-backup
+  status: Pending
+
+
+pip install kubernetes
+
+from kubernetes import client, config, watch
+
+# Load kubeconfig
+config.load_kube_config()
+
+api = client.CustomObjectsApi()
+core_api = client.CoreV1Api()
+
+GROUP = "kubevirt.io"
+VERSION = "v1alpha1"
+PLURAL = "vnfbackups"
+NAMESPACE = "default"
+
+def handle_backup(event):
+    obj = event['object']
+    name = obj['metadata']['name']
+    spec = obj.get('spec', {})
+    vm_name = spec.get('vmName')
+
+    if event['type'] == 'ADDED':
+        print(f"Backup requested for VM: {vm_name}")
+
+        # Simulate backup logic here
+        print(f"Performing backup for VM: {vm_name}...")
+
+        # Update status to Completed
+        body = {
+            "spec": {
+                **spec,
+                "status": "Completed"
+            }
+        }
+        api.patch_namespaced_custom_object(
+            group=GROUP,
+            version=VERSION,
+            namespace=NAMESPACE,
+            plural=PLURAL,
+            name=name,
+            body=body
+        )
+        print(f"Backup completed for {vm_name}")
+
+def main():
+    w = watch.Watch()
+    for event in w.stream(api.list_namespaced_custom_object,
+                          group=GROUP, version=VERSION,
+                          namespace=NAMESPACE, plural=PLURAL):
+        handle_backup(event)
+
+if __name__ == "__main__":
+    main()
+
+python3 vnfbackup-controller.py
+
+kubectl apply -f vnfbackup-sample.yaml
+
+kubectl get vnfbackup backup-vm1 -o yaml
+
+
+
+
+
