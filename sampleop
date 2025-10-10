@@ -1,0 +1,17 @@
+(venv) ubuntu@ip-172-31-30-158:~/sample_backup/scripts$  kubectl get vnfbackup backup-vm1 -o yaml
+apiVersion: kubevirt.io/v1alpha1
+kind: VNFBackup
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"kubevirt.io/v1alpha1","kind":"VNFBackup","metadata":{"annotations":{},"name":"backup-vm1","namespace":"default"},"spec":{"status":"Pending","storageLocation":"s3://mybucket/vm1-backup","vmName":"my-virtualmachine"}}
+  creationTimestamp: "2025-10-10T07:17:13Z"
+  generation: 2
+  name: backup-vm1
+  namespace: default
+  resourceVersion: "227083"
+  uid: 4b6d6fbf-46b0-4965-96c1-6b31b47a8b94
+spec:
+  status: Completed
+  storageLocation: s3://mybucket/vm1-backup
+  vmName: my-virtualmachine
