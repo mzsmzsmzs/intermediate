@@ -1,0 +1,93 @@
+CRD
+apiVersion: telco.vnf.io/v1alpha1
+kind: VNFBackupConfiguration
+metadata:
+  name: vnf-core-backup-policy
+  namespace: telco-vnf-a
+spec:
+  # 1. Target and Storage Definition
+  # Reference to the VNF instance whose components (VMs, DBs) are being backed up.
+  targetVNFRef:
+    name: vnf-core-instance-01
+    kind: VirtualNetworkFunction
+    apiGroup: telco.vnf.io
+  
+  # Reference to the separate VNFBackupStorage resource containing backend credentials (e.g., S3/Azure details) [1]
+  storageRef: “swift-vnf-backend-storage"
+
+  # 2. Scheduling, Mode, and Retention Policy
+  
+  # Defines the backup type: 'Full', 'Incremental', or 'OneTime'.[2]
+  backupMode: Incremental
+  
+  # Cron expression for scheduled runs (Daily at 3:00 AM UTC). 
+  # Use standard crontab format (Minutes Hours DayOfMonth Month DayOfWeek). 
+  # Examples: "0 3 * * *" (Daily at 3 AM), "0 3 * * 0" (Weekly on Sunday at 3 AM).[3]
+  schedule: "0 3 * * *"
+
+  retentionPolicy:
+    # Time-to-Live (TTL) for backup artifacts (e.g., 30 days) [4]
+    ttl: "720h0m0s" 
+    # Maximum number of full backups to retain [5]
+    maxFulls: 7 
+    # Maximum number of incremental backups to retain, linked to the last full backup in the chain [6]
+    maxIncrementals: 30
+# 3. Component List (Heterogeneous Targets)
+  components:
+    # 3.1. KubeVirt VM Image and Configuration Backup
+    - type: VirtualMachine # Captures VM disk image (via VolumeSnapshot) and VM configuration XML 
+      vmComponent:
+        vmName: vnf-core-processor-vm-0
+        # Recommended: Ensures application-consistent snapshot by freezing VM filesystem 
+        consistencyMode: GuestAgent 
+        # Optional: Select specific volumes by name to include.
+        volumeSelection:
+          - root-disk
+          - configuration-disk
+
+    # 3.2. MariaDB Database Backup (Logical Dump)
+    - type: Database # Uses application-aware logical backup via specialized addons 
+      dbComponent:
+        dbType: MariaDB
+        # References the AppBinding resource containing connection secrets/details [8]
+        appBindingRef: mariadb-vnf-appbinding
+        addonName: mariadb-addon
+        taskParams:
+          # Parameters to specify exact data to export [8]
+          databases:
+            - core-telemetry
+            - cdr-data
+# 3.4. Persistent Volume Claim Backup (Raw Block or File System Backup)
+    - type: Volume # Targets an entire PVC
+      volumeComponent:
+        pvcName: general-storage-pvc
+        # Use CSI VolumeSnapshot for efficient, block-level backup [10]
+        useCSI: true
+        
+    # 3.5. Arbitrary Configuration File Path Backup
+    - type: File # Targeted File System Backup (FSB) via Restic [11]
+      fileComponent:
+        # Identifies the pod/volume mount containing the files
+        podRef: vnf-config-manager-pod-0
+        volumeMountName: 'config-volume'
+        # Precise paths within the mounted volume to include
+        pathIncludes:
+          - /etc/vnf/configs/
+          - /var/log/startup-scripts/
+        # Paths within the volume mount to explicitly exclude
+        pathExcludes:
+          - /etc/vnf/configs/tmp/logs
+
+
+Few steps 
+BACKUP:
+1. BKUP-PKG; --> To take backup of existing package (TYPE = ALL (SW+DB))
+2. CRTE-FW-PKG -> Take backup of current FW (in case of fallback)
+3. DUMP-FW --> to dump firmware of the correspoding release version. (install new FW)
+STEPS:
+RTRV-PKG-INF;
+DUMP-PKG:PATH=NEW,VER=24.A.0,TYPE=ALL,FILE=,PKG=SKT_NGC_24.A.0_SMF_TOTAL_SW_DB_VM_ROCKY88_231220_034449.tar,EVOL=YES,FORCE=YES;
+ACT-DB-EVOL;
+COPY-PKG;
+INIT-NEW-PKG;
+RTRV-PKG-VER;
