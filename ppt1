@@ -1,0 +1,70 @@
+slide heading Best-practices and Strategies
+heading 1 Scaling Backups Across 100+ Sites
+subheading: planned allocation
+content snippet of crd yml: - # Resource allocation for backup operations 
+resources:
+  limits:
+    cpu: 4 
+    memory: 8Gi 
+    storage: 1Ti 
+  requests: 
+    cpu: 2 
+    memory: 4Gi 
+
+subheading: n/w optimization
+content: Parallel backup streams (8 concurrent/site)
+WAN optimization with local staging areas
+Bandwidth throttling during business hours
+Off-peak scheduling for large datasets
+
+subheading: impact minimization
+content CPU capped at 25% on hypervisor nodes
+Memory isolated from VM workloads
+Storage I/O prioritization for production
+
+
+
+heading 2: Application-Aware Backups
+
+subheading Declarative Approach
+
+content snippet of crd yml : apiVersion: backup.kubevirt.io/v1 
+kind: BackupPolicy 
+spec:
+  schedule: "0 2 * * *" 
+  applicationConsistency: 
+    databases: 
+     - type: mysql 
+       quiesceScript: /scripts/mysql-quiesce.sh 
+
+subheading: zero touch operations 
+content: DB consistency via pre/post-snapshot script
+Service orchestration using Kubernetes jobs
+Policy-driven automation with minimal manual intervention
+
+subheading: results 
+content: 99.5% backup success rate across all apps
+Zero data corruption – post migration
+Application recovery times reduced by 75%
+
+
+heading 3: Incremental Backup Strategy
+
+subheading: CBT-CSI Spec
+content snippet of crd yml: # Backup policy with CBT optimization 
+spec: 
+  incrementalPolicy: 
+    changeBlockTracking: enabled
+    compressionLevel: 6 
+    deduplicationEnabled: true 
+    networkThrottling: 100Mbps 
+
+subheading: CSI driver integration
+content: Storage provider integration for efficient snapshots
+Deduplication at source minimizing storage requirements
+
+subheading?: Resulkts
+content: Network traffic reduced by 80% for incremental backups
+Storage utilization optimized by 65% through deduplication
+Backup completion time reduced by 67%
+
