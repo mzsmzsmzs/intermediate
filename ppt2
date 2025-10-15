@@ -1,0 +1,14 @@
+Here’s a 1-minute concise version of your presentation script:
+
+⸻
+
+**“This slide summarizes our backup and restore best practices for VNF VMs running on KubeVirt.
+We’ve built a custom Backup & Restore CRD, which makes the entire BnR process declarative and Kubernetes-native — from policy definition to execution and recovery.
+
+For scalability, we run up to eight parallel backup streams per site, isolate CPU and memory for backup pods, and use WAN optimization with local caching to support 100+ distributed sites efficiently.
+
+For application-aware backups, pre- and post-snapshot hooks ensure database consistency, while Kubernetes Jobs handle orchestration with zero manual intervention — achieving about 99.5% backup success and a major reduction in data corruption.
+
+Finally, our incremental backup strategy with Changed Block Tracking and CSI driver integration tracks only modified blocks, reducing network traffic by 80% and cutting restore times by 60%.
+
+Overall, this approach provides scalable, consistent, and storage-efficient BnR across all VNF deployments.”**
