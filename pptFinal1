@@ -1,0 +1,24 @@
+Final 1.0:
+
+
+**“This slide summarizes our backup and restore best practices for VNF VMs running on KubeVirt.
+as mentioned before We’ve built a custom Backup & Restore CRD, which makes the entire process declarative…. and Kubernetes-native — from policy definition to execution of backup and restore and recovery.
+
+A) for scaling backups to 100+ sites, we have  planned allocation CRD which defines 1) resource limits
+and 2) resource requests per backup operations, i.e CPU, memory etc
+This ensures backup don’t overwhelm hypervisors
+
+
+B) For scalability, we run up to eight parallel backup streams per site …
+..and use WAN optimization and bandwidth throttling for n/w optimization
+
+optional-}
+C) impact minimation is embeddedi n the CRD: CPU is capped at 25 % for hypervisor nodes, their memory is ilolated from VMs
+
+A) using declarative BackupPolicy we schedule backup with application consistency, e.g MySQl database with pre- and post-snapshot hooks ensure database consistency,
+B)…while Kubernetes Jobs handle orchestration with zero manual intervention —
+C).. achieving about 99.5% of  backup success and a major reduction in data corruption.
+
+Finally, our incremental backup strategy with Changed Block Tracking and CSI driver integration tracks only modified blocks,  with estimation of reducing network traffic by 80% and cutting restore times by 60%.
+
+Overall, this approach provides scalable, consistent, and storage-efficient Backup and restore  across all VNF deployments.”**
