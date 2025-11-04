@@ -1,0 +1,11 @@
+# 1. Is slapd running?
+systemctl status slapd
+
+# 2. Does the slapd.d directory (cn=config style) exist?
+test -d /etc/openldap/slapd.d && echo "slapd.d exists (cn=config)" || echo "slapd.d missing"
+
+# 3. Is there a legacy slapd.conf?
+test -f /etc/openldap/slapd.conf && echo "slapd.conf exists (legacy)" || echo "slapd.conf missing"
+
+# 4. Can we query cn=config over ldapi?
+ldapsearch -Y EXTERNAL -H ldapi:/// -b cn=config dn || echo "ldapsearch to cn=config failed"
