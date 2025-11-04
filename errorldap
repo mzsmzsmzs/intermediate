@@ -1,0 +1,37 @@
+
+rlm_ldap (ldap): Connecting to ldap://localhost:389
+rlm_ldap (ldap): Waiting for bind result...
+rlm_ldap (ldap): Bind successful
+(0)     [ldap] = notfound
+(0)     [expiration] = noop
+(0)     [logintime] = noop
+(0) pap: WARNING: No "known good" password found for the user.  Not setting Auth-Type
+(0) pap: WARNING: Authentication will fail unless a "known good" password is available
+(0)     [pap] = noop
+(0)   } # authorize = ok
+(0) ERROR: No Auth-Type found: rejecting the user via Post-Auth-Type = Reject
+(0) Failed to authenticate the user
+(0) Using Post-Auth-Type Reject
+(0) # Executing group from file /etc/raddb/sites-enabled/default
+(0)   Post-Auth-Type REJECT {
+(0) attr_filter.access_reject: EXPAND %{User-Name}
+(0) attr_filter.access_reject:    --> testuser
+(0) attr_filter.access_reject: Matched entry DEFAULT at line 11
+(0)     [attr_filter.access_reject] = updated
+(0)     [eap] = noop
+(0)     policy remove_reply_message_if_eap {
+(0)       if (&reply:EAP-Message && &reply:Reply-Message) {
+(0)       if (&reply:EAP-Message && &reply:Reply-Message)  -> FALSE
+(0)       else {
+(0)         [noop] = noop
+(0)       } # else = noop
+(0)     } # policy remove_reply_message_if_eap = noop
+(0)   } # Post-Auth-Type REJECT = updated
+(0) Delaying response for 1.000000 seconds
+Waking up in 0.3 seconds.
+Waking up in 0.6 seconds.
+(0) Sending delayed response
+(0) Sent Access-Reject Id 83 from 127.0.0.1:1812 to 127.0.0.1:59199 length 20
+Waking up in 3.9 seconds.
+(0) Cleaning up request packet ID 83 with timestamp +70
+Ready to process requests
