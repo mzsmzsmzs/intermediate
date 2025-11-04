@@ -1,0 +1,59 @@
+dn: olcDatabase={2}hdb,cn=config
+changetype: modify
+replace: olcSuffix
+olcSuffix: dc=example,dc=com
+-
+replace: olcRootDN
+olcRootDN: cn=Manager,dc=example,dc=com
+-
+add: olcRootPW
+olcRootPW: {SSHA}pYH/zVD8cjhYx6MZptnG2o+4UJxYwUtt
+
+
+ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/base.ldif
+
+
+dn: dc=example,dc=com
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: Example Org
+dc: example
+
+dn: ou=People,dc=example,dc=com
+objectClass: organizationalUnit
+ou: People
+
+dn: uid=testuser,ou=People,dc=example,dc=com
+objectClass: inetOrgPerson
+cn: Test User
+sn: User
+uid: testuser
+userPassword: test123
+
+ldapadd -x -D "cn=Manager,dc=example,dc=com" -w yourpassword -f /tmp/add.ldif
+
+ldapsearch -x -D "cn=Manager,dc=example,dc=com" -w yourpassword -b "dc=example,dc=com"
+
+ldap {
+    server = 'localhost'
+    port = 389
+    identity = 'cn=Manager,dc=example,dc=com'
+    password = 'yourpassword'
+    base_dn = 'dc=example,dc=com'
+
+    user {
+        filter = "(uid=%{%{Stripped-User-Name}:-%{User-Name}})"
+    }
+
+    start_tls = no
+}
+
+
+ln -s /etc/raddb/mods-available/ldap /etc/raddb/mods-enabled/ldap
+systemctl restart radiusd
+
+radtest testuser test123 localhost 0 testing123
+
+
+radiusd -X
