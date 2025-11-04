@@ -1,0 +1,45 @@
+# A: search by uid
+ldapsearch -x -LLL -b "dc=example,dc=com" "(uid=testuser)" dn uid cn objectClass
+
+# B: search by cn
+ldapsearch -x -LLL -b "dc=example,dc=com" "(cn=testuser)" dn uid cn objectClass
+
+# C: list the full testuser entry (if dn known)
+ldapsearch -x -LLL -b "uid=testuser,ou=People,dc=example,dc=com" '*'
+
+
+ldapsearch -x -LLL -b "dc=example,dc=com" "(objectClass=inetOrgPerson)" dn uid cn | sed -n '1,120p'
+
+ldap {
+    server = "127.0.0.1"
+    identity = "cn=Manager,dc=example,dc=com"
+    password = "adminpw"
+    base_dn = "dc=example,dc=com"
+
+    user {
+        base_dn = "ou=People,dc=example,dc=com"
+        # try uid first, then cn
+        filter = "(|(uid=%{User-Name})(cn=%{User-Name}))"
+        scope = "sub"
+    }
+
+    password_attribute = "userPassword"
+    auth_type = "ldap"
+}
+
+sudo ln -sf /etc/raddb/mods-available/ldap /etc/raddb/mods-enabled/ldap
+sudo systemctl restart radiusd
+
+sudo systemctl stop radiusd
+sudo radiusd -X
+# in other shell:
+radtest testuser test123 localhost 0 testing123
+
+rlm_ldap: Performing search in "ou=People,dc=example,dc=com" with filter "(|(uid=testuser)(cn=testuser))"
+rlm_ldap: User found DN: uid=testuser,ou=People,dc=example,dc=com
+rlm_ldap: Bind as uid=testuser,...  (this shows it tries to bind as the user)
+rlm_ldap: Bind was successful
+Login OK: [testuser]
+
+
+ldapwhoami -x -D "uid=testuser,ou=People,dc=example,dc=com" -w test123
