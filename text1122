@@ -1,0 +1,2 @@
+During VNF instantiation, the error “Block fail does not get cleared” occurred because one or more VNFCs remained in Function Fail/Block state even after sending the ACTIVATE/ALLOW TL1 commands.
+The checkBlock() method polls VNFC states for up to 160 seconds, but removeNode() continued to return VNFCs still blocked. This indicates that those VNFCs did not complete initialization or failed to clear internal alarms within the expected time.
