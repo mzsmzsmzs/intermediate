@@ -1,0 +1,780 @@
+#!/bin/bash
+
+######################################################
+#    Making shape of Geo-Redundancy.
+#    PARAMs
+#-----------------------------------------------------
+# Params from System
+#  - install mode (mano, nfvo, vnfm)
+#  - install version ( 900, build date)
+#  - service ip
+#  - nic list
+#  - ip list
+# Params from User
+#  - node IP to join
+#  - HB ip and nic
+#  - VIP for service
+#-----------------------------------------------------
+# Workflows
+# 1. Check system
+#  1-1. (Params from System) is OK
+#  1-2. Check this system has VIP
+# 2. Get params from user
+######################################################
+
+SSH_CMD=""
+SCP_CMD=""
+NIC_LIST=""
+HB_NIC=""
+######################################################
+COROSYNC_CONF=/etc/corosync/corosync.conf
+######################################################
+
+LOG_SETTING()
+{
+    if [ ! -d /home/mano/INSTALL_LOG ]
+    then
+        mkdir /home/mano/INSTALL_LOG
+    fi
+    INSTALL_LOG=$(mktemp $(pwd)/../../INSTALL_LOG/gr_setup_$(date +%Y%m%d_%H%M%S)_XXXXX.log)
+    chmod 755 $INSTALL_LOG
+    echo "Log file path: $INSTALL_LOG"
+}
+
+CHECK_IPV() {
+  IP_ADDR=$1
+  ipcalc -c -s -4 ${IP_ADDR}
+  RESULT=$?
+  if [[ ${RESULT} -eq 0 ]]; then
+    return 4
+  fi
+  ipcalc -c -s -6 ${IP_ADDR}
+  RESULT=$?
+  if [[ ${RESULT} -eq 0 ]]; then
+    return 6
+  fi
+
+  return 1
+}
+
+getUncompressedIPAddress()
+{
+    ipv6calc -q --addr_to_uncompressed $1
+}
+
+printHead()
+{
+        clear
+        echo "+=================================================+"
+        echo "|             Setting Geo-Redundancy              |"
+        echo "+=================================================+"
+        echo " "
+}
+
+
+## Get IP of counter node, and check ip version for ssh and scp command.
+getCounterNodeIp()
+{
+        HB_DR_IP=""
+        RES_TMP=""
+
+        read -p " Enter heartbeat IP of DR node: " HB_DR_IP
+        CHECK_IPV $HB_DR_IP
+        RES_TMP=$?
+        if [[ ${RES_TMP} -eq 1 ]]
+        then
+                echo " Check input IP!"
+                getCounterNodeIp
+        else
+                IPV=$RES_TMP
+        fi
+
+    if [ "$IPV" -eq 6 ]; then
+        HB_DR_IP=$(getUncompressedIPAddress $HB_DR_IP)
+    fi
+}
+
+getManoPasswd()
+{
+        local MANO_PWD1=""
+        local MANO_PWD2=""
+        read -s -p " Please enter \"mano\" password: " MANO_PWD1;printf "\n"
+        read -s -p " Repeat enter \"mano\" password: " MANO_PWD2;printf "\n"
+
+        CHECK_PWD $MANO_PWD1 $MANO_PWD2
+
+}
+
+getDomain()
+{
+        read -p " Enter FQDN for VNFM service: " FQDN_INFO
+        while true
+        do
+                if [ "$FQDN_INFO" = "" ]
+                then
+                    echo "enter value!"
+                    getDomain
+                else
+                    break;
+                fi
+        done
+}
+
+CHECK_PWD()
+{
+        MANO_PWD=""
+        if [ "$1" = "" -o "$2" = "" ]
+        then
+                echo "Please enter password"
+                getManoPasswd
+                return
+        fi
+        if [ "$1" != "$2" ]
+        then
+                echo "Please enter same password!"
+                getManoPasswd
+        else
+                MANO_PWD=$1
+        fi
+}
+
+settingSshScp()
+{
+        IPMODE=""
+        if [ "$1" -eq 6 ]
+        then
+                IPMODE="-6"
+        fi
+
+        SSH_CMD="sshpass -p $MANO_PWD ssh ${IPMODE} -q -o StrictHostKeyChecking=no "mano"@"
+        SCP_CMD="sshpass -p $MANO_PWD scp ${IPMODE} -q -o StrictHostKeyChecking=no"
+}
+
+parmaInitialize()
+{
+        HOSTNAME_OP_NODE_A=""
+        HOSTNAME_OP_NODE_B=""
+        HOSTNAME_DR_NODE_C=""
+        HB_OP_IP1=""
+        HB_OP_IP2=""
+        NIC_LIST_OP_A=""
+        NIC_LIST_OP_B=""
+        NIC_LIST_DR_C=""
+        NIC_COUNT_OP_A=""
+        NIC_COUNT_OP_B=""
+        NIC_COUNT_DR_C=""
+        HB_OP_NIC=""
+        HB_DR_NIC=""
+        MANO_REL_VERSION_A=""
+        MANO_REL_VERSION_B=""
+        MANO_REL_VERSION_C=""
+        MANO_B_DATE_A=""
+        MANO_B_DATE_B=""
+        MANO_B_DATE_C=""
+        OP_VIP_LIST=""
+        OP_VIP_RESOURCES=""
+        OP_SERVICE_IP=""
+        DR_SERVICE_IP=""
+        INSTALL_MODE=""
+}
+
+#Hostname, NIC - IP mapping, VIP, Version
+#
+getNodeInfo()
+{
+
+        parmaInitialize
+        ## get Hostname
+        HOSTNAME_OP_NODE_A=$(hostname)
+        HOSTNAME_OP_NODE_B=$(echo "$MANO_PWD" | sudo -S grep ^wsrep_cluster_address= /etc/my.cnf.d/galera.cnf | tr -d \"\' | sed "s|^wsrep_cluster_address=gcomm://||" | sed "s|,|\n|" | grep -v ^$(hostname)$)
+        HOSTNAME_DR_NODE_C=$(${SSH_CMD}${HB_DR_IP} "hostname")
+
+        HB_OP_IP1="$(cat /etc/hosts | grep "$HOSTNAME_OP_NODE_A"$ | awk '{print $1}')"
+        HB_OP_IP2="$(cat /etc/hosts | grep "$HOSTNAME_OP_NODE_B"$ | awk '{print $1}')"
+
+        ## get NIC LIST
+        NIC_LIST_OP_A=$(ls /sys/class/net | grep -v lo)
+        NIC_COUNT_OP_A=$(ls /sys/class/net | grep -v lo | wc -l)
+        NIC_LIST_DR_C=$(${SSH_CMD}${HB_DR_IP} "ls /sys/class/net | grep -v lo")
+        NIC_COUNT_DR_C=$(${SSH_CMD}${HB_DR_IP} "ls /sys/class/net | grep -v lo | wc -l")
+        for nic_dr in $NIC_LIST_DR_C
+    do
+        if [ "$IPV" -eq 4 ]; then
+            if [ "$(${SSH_CMD}${HB_DR_IP} "/usr/sbin/ip addr show ${nic_dr}" | grep inet | awk '{print $2}' | grep -I "${HB_DR_IP}")" != "" ]; then
+                HB_DR_NIC=${nic_dr}
+                break
+            fi
+        else
+            IP_LIST=$(${SSH_CMD}${HB_DR_IP} "/usr/sbin/ifconfig ${nic_dr}" | grep inet6 | awk '{print $2}')
+            for tempip in $IP_LIST
+            do
+                tempip=$(getUncompressedIPAddress $tempip)
+                if [ "$(echo $tempip | grep -I "${HB_DR_IP}")" != "" ]; then
+                    HB_DR_NIC=${nic_dr}
+                    break
+                fi
+            done
+        fi
+    done
+
+
+        for nic_op in $NIC_LIST_OP_A
+        do
+        if [ "$IPV" -eq 4 ]; then
+            if [ "$(/usr/sbin/ip addr show ${nic_op} | grep inet | awk '{print $2}' | grep -I "${HB_OP_IP1}")" != "" ]; then
+                HB_OP_NIC=${nic_op}
+                break
+            fi
+        else
+            IP_LIST=$(/usr/sbin/ifconfig ${nic_op} | grep inet6 | awk '{print $2}')
+            for tempip in $IP_LIST
+            do
+                tempip=$(getUncompressedIPAddress $tempip)
+                if [ "$(echo $tempip | grep -I "${HB_OP_IP1}")" != "" ]; then
+                    HB_OP_NIC=${nic_op}
+                    break
+                fi
+            done
+        fi
+        done
+
+        ## get version
+        MANO_REL_VERSION_A="$(cat /home/mano/CMS/resource/proc_mgr/version | grep "release_version=" | sed "s|release_version=||")"
+        MANO_B_DATE_A="$(cat /home/mano/CMS/resource/proc_mgr/version | grep "build_date=" | sed "s|build_date=||")"
+        MANO_REL_VERSION_C="$(${SSH_CMD}${HB_DR_IP} "cat /home/mano/CMS/resource/proc_mgr/version" | grep "release_version=" | sed "s|release_version=||")"
+        MANO_B_DATE_C="$(${SSH_CMD}${HB_DR_IP} "cat /home/mano/CMS/resource/proc_mgr/version" | grep "build_date=" | sed "s|build_date=||")"
+
+        OP_SERVICE_IP=$(cat /home/mano/.config/service_ip)
+        DR_SERVICE_IP=$(${SSH_CMD}${HB_DR_IP} "cat /home/mano/.config/service_ip")
+        INSTALL_MODE_A=$(cat /home/mano/.config/mode)
+        INSTALL_MODE_C=$(${SSH_CMD}${HB_DR_IP} "cat /home/mano/.config/mode")
+
+        ## get VIP
+        OP_VIP_LIST=$(echo "$MANO_PWD" | sudo -S 2>/dev/null grep 'instance_attributes-ip" name="ip' /var/lib/pacemaker/cib/cib.xml | awk '{print $4}' | sed 's|value=||g' | tr -d \"/\>) &>/dev/null
+
+        ## get VIP resources
+        OP_VIP_RESOURCES=$(echo "$MANO_PWD" | sudo -S 2>/dev/null grep 'provider="heartbeat" type="IPaddr2' /var/lib/pacemaker/cib/cib.xml | awk '{print $3}' | sed "s|id=||g" | tr -d \"\') &>/dev/null
+        ## Debug Params print
+        printParams
+
+        #sshpass -p samsungmano ssh 10.251.213.236 "/usr/sbin/ip addr show eth0" | grep inet | awk '{print $2}' | grep -v "fe80" | grep -v "127.0.0.1/8"
+
+}
+printParams()
+{
+    echo "HOSTNAME_OP_NODE_A: $HOSTNAME_OP_NODE_A"
+    echo "HOSTNAME_OP_NODE_B: $HOSTNAME_OP_NODE_B"
+    echo "HOSTNAME_DR_NODE_C: $HOSTNAME_DR_NODE_C"
+    for nic in $NIC_LIST_OP_A
+    do
+        echo "NIC_OP_A: $nic"
+    done
+    echo "NIC_COUNT_OP_A: $NIC_COUNT_OP_A"
+    for nic in $NIC_LIST_DR_C
+    do
+        echo "NIC_DR_C: $nic"
+    done
+    echo "NIC_COUNT_DR_C: $NIC_COUNT_DR_C"
+
+        echo "HB_OP_NIC: $HB_OP_NIC"
+        echo "HB_DR_NIC: $HB_DR_NIC"
+
+        echo "HB_OP_IP1: $HB_OP_IP1"
+        echo "HB_OP_IP2: $HB_OP_IP2"
+        echo "HB_DR_IP: $HB_DR_IP"
+
+    echo "MANO_REL_VERSION_A: $MANO_REL_VERSION_A"
+    echo "MANO_B_DATE_A: $MANO_B_DATE_A"
+
+        echo "MANO_REL_VERSION_C: $MANO_REL_VERSION_C"
+    echo "MANO_B_DATE_C: $MANO_B_DATE_C"
+
+    echo "OP_SERVICE_IP: $OP_SERVICE_IP"
+    echo "DR_SERVICE_IP: $DR_SERVICE_IP"
+
+        echo "INSTALL_MODE_A: $INSTALL_MODE_A"
+        echo "INSTALL_MODE_C: $INSTALL_MODE_C"
+
+        for VIP in $OP_VIP_LIST
+        do
+                echo "OP_VIP_LIST: $VIP"
+        done
+
+        for resource in $OP_VIP_RESOURCES
+        do
+                echo "OP_VIP_RESOURCE: $resource"
+        done
+}
+
+validateNodeInfo()
+{
+        STATUS_FLAG=OK
+        while true
+        do
+                if [ "$INSTALL_MODE_A" != "$INSTALL_MODE_C" ]
+                then
+                        echo "Install mode is different"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$INSTALL_MODE_A" != "vnfm" ]
+                then
+                        echo "Install mode is not vnfm"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+
+                if [ "$MANO_REL_VERSION_A" != "$MANO_REL_VERSION_C" ]
+                then
+                        echo "Nodes have different version"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$MANO_B_DATE_A" != "$MANO_B_DATE_C" ]
+                then
+                        echo "Nodes have different release date"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$HOSTNAME_OP_NODE_A" = "$HOSTNAME_DR_NODE_C" -o "$HOSTNAME_OP_NODE_B" = "$HOSTNAME_DR_NODE_C" ]
+                then
+                        echo "Nodes have same hostname"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$(grep "ring0_addr" $COROSYNC_CONF | wc -l)" -ne 2 ]
+                then
+                        echo "Check current OP nodes have 2 members"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$HB_OP_NIC" != "$HB_DR_NIC" ]
+                then
+                        echo "NIC of DR Heartbeat is different from OP one!"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                CHECK_HB_NIC=NOP
+                for nic in $NIC_LIST_OP_A
+                do
+                        if [ "$nic" = "$HB_DR_NIC" ]
+                        then
+                                CHECK_HB_NIC=YES
+                        fi
+                done
+                if [ "$CHECK_HB_NIC" != "YES" ]
+                then
+                        echo "Cannot find NIC for Heartbeat from this node!"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$OP_SERVICE_IP" = "" ]
+                then
+                        echo "Cannot find Service IP of OP. Please check file /home/mano/.config/service_ip"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$DR_SERVICE_IP" = "" ]
+                then
+                        echo "Cannot find Service IP of DR. Please check file /home/mano/.config/service_ip"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$IPV" -eq 4 ]
+                then
+                        TMP_STR_IP=$HB_OP_IP1
+                else
+                        TMP_STR_IP=$(getUncompressedIPAddress $HB_OP_IP1)
+                fi
+                if [ "$(grep ring0_addr: /etc/corosync/corosync.conf | awk '{print $2}' | grep $TMP_STR_IP)" = "" ]
+                then
+                        echo "Heartbeat IP is different from corosync. Please check HB IP!"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$(mysql -ucms -p$(echo 'c0Btc3VuZzEh' | openssl base64 -d) -e "show status like 'wsrep_cluster_size'" | grep wsrep_cluster_size | awk '{print $2}')" -ne 2 ]
+                then
+                        echo "The number of mariaDB cluster member is not 2. Please check mariaDB status!"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$(mysql -ucms -p$(echo 'c0Btc3VuZzEh' | openssl base64 -d) -e "show status like 'wsrep_cluster_size'" | grep wsrep_cluster_size | awk '{print $2}')" -ne 2 ]
+                then
+                        echo "The number of mariaDB cluster member is not 2. Please check mariaDB status!"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                if [ "$(mysql -ucms -p$(echo 'c0Btc3VuZzEh' | openssl base64 -d) -e "show status like 'wsrep_cluster_size'" | grep wsrep_cluster_size | awk '{print $2}')" -ne 2 ]
+                then
+                        echo "The number of mariaDB cluster member is not 2. Please check mariaDB status!"
+                        STATUS_FLAG=NO
+                        break;
+                fi
+
+                break;
+        done
+
+        if [ "$STATUS_FLAG" = "NO" ]
+        then
+                exit 1
+        fi
+}
+
+checkProceed()
+{
+        read -p "Continue? (y/n): " CP_ANS
+        case $CP_ANS in
+                "y"|"Y")
+                        echo "Continue!"
+                        ;;
+                "n"|"N")
+                        echo "Bye!!"
+                        exit 0
+                        ;;
+                *)
+                        echo "Please input \"y|n\""
+                        checkProceed
+                        ;;
+        esac
+}
+
+setHostInfo()
+{
+    echo "host change"
+        sed -i "s|$OP_SERVICE_IP|$FQDN_INFO|g" /home/mano/CMS/resource/core_vnfm/module_config/adaptor_shape.xml
+    echo "$MANO_PWD" | sudo -S chmod 777 /etc/hosts &>/dev/null
+    echo "$HB_DR_IP $HOSTNAME_DR_NODE_C" >> /etc/hosts
+    echo "$OP_SERVICE_IP $FQDN_INFO" >> /etc/hosts
+    echo "$MANO_PWD" | sudo -S chmod 644 /etc/hosts &>/dev/null
+
+    ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S "chmod 777 /etc/hosts"; \
+            echo "$HB_DR_IP $HOSTNAME_DR_NODE_C" >> /etc/hosts; \
+            echo "$OP_SERVICE_IP $FQDN_INFO" >> /etc/hosts; \
+            echo "$MANO_PWD" | sudo -S "chmod 644 /etc/hosts";"
+
+    ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S "chmod 777 /etc/hosts"; \
+            echo "$HB_OP_IP1 $HOSTNAME_OP_NODE_A" >> /etc/hosts; \
+            echo "$HB_OP_IP2 $HOSTNAME_OP_NODE_B" >> /etc/hosts; \
+            echo "$HB_DR_IP $HOSTNAME_DR_NODE_C" >> /etc/hosts; \
+            echo "$DR_SERVICE_IP $FQDN_INFO" >> /etc/hosts; \
+            echo "$MANO_PWD" | sudo -S "chmod 644 /etc/hosts";"
+}
+
+setMariaDbCluster()
+{
+        echo "galera edit"
+        echo "$MANO_PWD" | sudo -S cp /etc/my.cnf.d/galera.cnf ./galera.cnf_A &>/dev/null
+        echo "$MANO_PWD" | sudo -S cp /etc/my.cnf.d/galera.cnf ./galera.cnf_C &>/dev/null
+        echo "$MANO_PWD" | sudo -S chmod 777 ./galera.cnf_* &>/dev/null
+
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S cp -f /etc/my.cnf.d/galera.cnf ~/galera.cnf_B; \
+                        echo "$MANO_PWD" | sudo -S chmod 777 ~/galera.cnf_B;" &>/dev/null
+        if [ "$IPV" -eq 4 ]
+    then
+                ${SCP_CMD} ${HB_OP_IP2}:~/galera.cnf_B . &>/dev/null
+        else
+                ${SCP_CMD} [${HB_OP_IP2}]:~/galera.cnf_B . &>/dev/null
+        fi
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S rm -f ~/galera.cnf_B;" &>/dev/null
+
+        sed -i "s|^wsrep_node_name=.*$|wsrep_node_name=scmr_ha3|" ./galera.cnf_C
+        TMP_BUF=$(grep wsrep_node_address= ./galera.cnf_C | sed "s|wsrep_node_address=||" | tr -d \"\')
+        sed -i "s|${TMP_BUF}|${HOSTNAME_DR_NODE_C}|g" ./galera.cnf_C
+        sed -i "s|^wsrep_cluster_address=.*$|wsrep_cluster_address=\"gcomm://${HOSTNAME_OP_NODE_A},${HOSTNAME_OP_NODE_B},${HOSTNAME_DR_NODE_C}\"|" ./galera.cnf_A
+        sed -i "s|^wsrep_cluster_address=.*$|wsrep_cluster_address=\"gcomm://${HOSTNAME_OP_NODE_A},${HOSTNAME_OP_NODE_B},${HOSTNAME_DR_NODE_C}\"|" ./galera.cnf_B
+        sed -i "s|^wsrep_cluster_address=.*$|wsrep_cluster_address=\"gcomm://${HOSTNAME_OP_NODE_A},${HOSTNAME_OP_NODE_B},${HOSTNAME_DR_NODE_C}\"|" ./galera.cnf_C
+
+
+
+        ## Deploy galera conf
+        echo "$MANO_PWD" | sudo -S cp -f /etc/my.cnf.d/galera.cnf /etc/my.cnf.d/galera.cnf.gr.bak &>/dev/null
+        echo "$MANO_PWD" | sudo -S cp -f ./galera.cnf_A /etc/my.cnf.d/galera.cnf &>/dev/null
+        echo "$MANO_PWD" | sudo -S chcon -R -u system_u /etc/my.cnf* &>/dev/null
+        echo "$MANO_PWD" | sudo -S chown root:root /etc/my.cnf.d/galera.cnf &>/dev/null
+        echo "$MANO_PWD" | sudo -S chmod 644 /etc/my.cnf.d/galera.cnf &>/dev/null
+
+        if [ "$IPV" -eq 4 ]
+    then
+                ${SCP_CMD} ./galera.cnf_B ${HB_OP_IP2}:~ &>/dev/null
+        else
+                ${SCP_CMD} ./galera.cnf_B [${HB_OP_IP2}]:~ &>/dev/null
+        fi
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S cp -f /etc/my.cnf.d/galera.cnf /etc/my.cnf.d/galera.cnf.gr.bak; \
+                echo "$MANO_PWD" | sudo -S mv -f ~/galera.cnf_B /etc/my.cnf.d/galera.cnf; \
+                echo "$MANO_PWD" | sudo -S chcon -R -u system_u /etc/my.cnf* &>/dev/null; \
+                echo "$MANO_PWD" | sudo -S chown root:root /etc/my.cnf.d/galera.cnf &>/dev/null;  \
+                echo "$MANO_PWD" | sudo -S chmod 644 /etc/my.cnf.d/galera.cnf &>/dev/null" &>/dev/null
+
+        if [ "$IPV" -eq 4 ]
+    then
+                ${SCP_CMD} ./galera.cnf_C ${HB_DR_IP}:~ &>/dev/null
+        else
+                ${SCP_CMD} ./galera.cnf_C [${HB_DR_IP}]:~ &>/dev/null
+        fi
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S cp -f /etc/my.cnf.d/galera.cnf /etc/my.cnf.d/galera.cnf.gr.bak; \
+                echo "$MANO_PWD" | sudo -S mv -f ~/galera.cnf_C /etc/my.cnf.d/galera.cnf; \
+                echo "$MANO_PWD" | sudo -S chcon -R -u system_u /etc/my.cnf* &>/dev/null; \
+                echo "$MANO_PWD" | sudo -S chown root:root /etc/my.cnf.d/galera.cnf &>/dev/null;  \
+                echo "$MANO_PWD" | sudo -S chmod 644 /etc/my.cnf.d/galera.cnf &>/dev/null" &>/dev/null
+
+
+        rm -f ./galera.cnf_A ./galera.cnf_B ./galera.cnf_C
+
+        echo "galera edit finish"
+        galeraStart
+}
+
+galeraStart()
+{
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S /etc/init.d/maria_cluster stop &>/dev/null;" &>/dev/null
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S /etc/init.d/maria_cluster stop &>/dev/null;" &>/dev/null
+        echo "$MANO_PWD" | sudo -S /etc/init.d/maria_cluster stop &>/dev/null
+
+    ### If OP2 have bootstrap value 1, DB clustering would not bind.
+    ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S sed -i \"s|safe_to_bootstrap: 1|safe_to_bootstrap: 0|\" /var/lib/mysql/grastate.dat" &>/dev/null
+
+        echo "$MANO_PWD" | sudo -S galera_new_cluster &>/dev/null
+        echo "$MANO_PWD" | sudo -S systemctl status mariadb.service &>/dev/null
+        TMP_RES=$?
+        if [ "$TMP_RES" -ne 0 ]
+        then
+                echo "Check mariaDB service status!"
+        fi
+
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S systemctl start mariadb.service &>/dev/null;" &>/dev/null
+        TMP_RES=$?
+        if [ "$TMP_RES" -ne 0 ]
+        then
+                echo "Check mariaDB service status!"
+        fi
+
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S systemctl start mariadb.service &>/dev/null;" &>/dev/null
+    sleep 10
+}
+
+dbCluster()
+{
+        setMariaDbCluster
+}
+
+fileSystemSync()
+{
+        echo "FS sync start"
+        ##syncthing setting
+        ${SSH_CMD}${HB_DR_IP} "echo ${MANO_PWD} | sudo -S 2>/dev/null su - mano -c "syncthing >/dev/null &"" &>/dev/null
+
+  while true
+  do
+          if ${SSH_CMD}${HB_DR_IP} stat /home/mano/.config/syncthing/config.xml >/dev/null 2>&1
+                  then
+                         echo "Syncthing configuration file has been created."
+                         break;
+                  else
+                         echo "Waiting for syncthing configuration file created..."
+          fi
+  done
+
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S pkill syncthing &>/dev/null;" &>/dev/null
+
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S rm -rf /home/mano/Sync &>/dev/null;" &>/dev/null
+
+        echo "$MANO_PWD" | sudo -S cp -f /usr/lib/systemd/system/syncthing@mano.service ./syncthing@mano.service &>/dev/null
+        echo "$MANO_PWD" | sudo -S chmod 777 ./syncthing@mano.service &>/dev/null
+        if [ "$IPV" -eq 4 ]
+    then
+                ${SCP_CMD} ./syncthing@mano.service ${HB_DR_IP}:~ &>/dev/null
+        else
+                ${SCP_CMD} ./syncthing@mano.service [${HB_DR_IP}]:~ &>/dev/null
+        fi
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S mv -f ~/syncthing@mano.service /usr/lib/systemd/system/syncthing@mano.service &>/dev/null; \
+                        echo "$MANO_PWD" | sudo -S chmod 644 /usr/lib/systemd/system/syncthing@mano.service &>/dev/null; \
+                        echo "$MANO_PWD" | sudo -S chown root:root /usr/lib/systemd/system/syncthing@mano.service &>/dev/null; \
+                        echo "$MANO_PWD" | sudo -S systemctl enable syncthing@mano.service &>/dev/null; \
+                        " &>/dev/null
+
+        echo "$MANO_PWD" | sudo -S cp -f ./bin/mano_stignore /home/mano/.stignore &>/dev/null
+        echo "$MANO_PWD" | sudo -S chown mano:cms /home/mano/.stignore &>/dev/null
+        echo "$MANO_PWD" | sudo -S chmod -x /home/mano/.stignore &>/dev/null
+
+        if [ "$IPV" -eq 4 ]
+    then
+                ${SCP_CMD} ~/.stignore ${HB_DR_IP}:~/.stignore &>/dev/null
+        else
+                ${SCP_CMD} ~/.stignore [${HB_DR_IP}]:~/.stignore &>/dev/null
+        fi
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S chown mano:cms /home/mano/.stignore &>/dev/null; \
+                        echo "$MANO_PWD" | sudo -S chmod -x /home/mano/.stignore &>/dev/null; \
+                        " &>/dev/null
+
+        setSyncConfig
+        startSyncService
+        echo "FS sync start end"
+}
+
+startSyncService()
+{
+        echo "start syncthing"
+
+        ### Force mtime update
+    echo "$MANO_PWD" | sudo -S find /home/mano/ -exec touch {} + &>/dev/null
+
+        echo "$MANO_PWD" | sudo -S systemctl start syncthing@mano.service &>/dev/null
+        echo "$MANO_PWD" | sudo -S systemctl status syncthing@mano.service &>/dev/null
+        TMP_RES=$?
+        if [ "$TMP_RES" -eq 0 ]
+        then
+                sleep 10
+                ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S systemctl start syncthing@mano.service &>/dev/null;"
+                sleep 3
+                ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S systemctl start syncthing@mano.service &>/dev/null;"
+        else
+                echo "Check syncthing status"
+        fi
+
+        find /home/mano/ -name "*\.sync-conflict-[0-9]*" | xargs rm -rf &>/dev/null
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S find /home/mano/ -name "*\.sync-conflict-[0-9]*" | xargs rm -rf &>/dev/null" &>/dev/null;
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S find /home/mano/ -name "*\.sync-conflict-[0-9]*" | xargs rm -rf &>/dev/null" &>/dev/null;
+
+        echo "start syncthing end"
+
+}
+
+setSyncConfig()
+{
+        echo "set Syncthing config"
+
+        cp -f ~/.config/syncthing/config.xml ~/.config/syncthing/config.xml.gr.bak
+        if [ "$IPV" -eq 4 ]
+    then
+                ${SCP_CMD} ~/.config/syncthing/config.xml.gr.bak ${HB_OP_IP2}:~/.config/syncthing/config.xml.gr.bak &>/dev/null
+        else
+                ${SCP_CMD} ~/.config/syncthing/config.xml.gr.bak [${HB_OP_IP2}]:~/.config/syncthing/config.xml.gr.bak &>/dev/null
+        fi
+
+        cp -f ~/.config/syncthing/config.xml ./config.xml
+
+        CLUSTER3_DEVICE_ID=""
+        CLUSTER3_DEVICE_ID=$(${SSH_CMD}"${HB_DR_IP}" grep \"device id\" ~/.config/syncthing/config.xml | grep -v "compression" | cut -d\" -f2 | cut -d\" -f1)
+
+        TMP_BUF="<device id=\"$CLUSTER3_DEVICE_ID\" introducedBy=\"\"></device>"
+        sed -i "/minDiskFreePct/i $TMP_BUF" ./config.xml
+
+
+        TMP_BUF2="<device id=\"$CLUSTER3_DEVICE_ID\" name=\"$HOSTNAME_DR_NODE_C\" compression=\"metadata\" introducer=\"false\" skipIntroductionRemovals=\"false\" introducedBy=\"\">"
+        sed -i "/gui enabled/i $TMP_BUF2" ./config.xml
+
+        TMP_BUF3="<address>tcp://$HOSTNAME_DR_NODE_C:22000</address>"
+        sed -i "/gui enabled/i $TMP_BUF3" ./config.xml
+
+        TMP_BUF4="<paused>false</paused>\n</device>"
+        sed -i "/gui enabled/i $TMP_BUF4" ./config.xml
+
+        cp -f ./config.xml ~/.config/syncthing/config.xml &>/dev/null
+        echo "$MANO_PWD" | sudo -S chown mano:cms ~/.config/syncthing/config.xml &>/dev/null
+        echo "$MANO_PWD" | sudo -S chmod 600 ~/.config/syncthing/config.xml &>/dev/null
+
+        if [ "$IPV" -eq 4 ]
+    then
+                ${SCP_CMD} ./config.xml ${HB_OP_IP2}:~/.config/syncthing/config.xml &>/dev/null
+                ${SCP_CMD} ./config.xml ${HB_DR_IP}:~/.config/syncthing/config.xml &>/dev/null
+        else
+                ${SCP_CMD} ./config.xml [${HB_OP_IP2}]:~/.config/syncthing/config.xml &>/dev/null
+                ${SCP_CMD} ./config.xml [${HB_DR_IP}]:~/.config/syncthing/config.xml &>/dev/null
+        fi
+
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S chown mano:cms ~/.config/syncthing/config.xml &>/dev/null; \
+                echo "$MANO_PWD" | sudo -S chmod 600 ~/.config/syncthing/config.xml &>/dev/null; \
+                " &>/dev/null
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S chown mano:cms ~/.config/syncthing/config.xml &>/dev/null; \
+                echo "$MANO_PWD" | sudo -S chmod 600 ~/.config/syncthing/config.xml &>/dev/null; \
+                " &>/dev/null
+        echo "set Syncthing config end"
+}
+
+### pacemaker cluster stop from all nodes
+### destroy cluster node2. node2 will join to node1
+breakDownPacemaker()
+{
+        echo "break down pacemaker"
+        ## Backup cib file
+        echo "$MANO_PWD" | sudo -S cp  -f /var/lib/pacemaker/cib/cib.xml ~/.config/cib.xml.gr.bak &>/dev/null
+        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S cp  -f /var/lib/pacemaker/cib/cib.xml ~/.config/cib.xml.gr.bak" &>/dev/null
+
+        echo "$MANO_PWD" | sudo -S pcs cluster stop --force &>/dev/null
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S pcs cluster stop --force" &>/dev/null
+
+        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S pcs cluster destroy --force" &>/dev/null
+        echo "break down pacemaker end"
+}
+
+
+setPacemakerCluter()
+{
+        if [ "$IPV" -eq 4 ]
+        then
+                echo "$MANO_PWD" | sudo -S pcs cluster auth $HB_DR_IP -u hacluster -p samsung --force &>/dev/null
+                echo "$MANO_PWD" | sudo -S pcs cluster node add $HB_DR_IP --force &>/dev/null
+        else
+                echo "$MANO_PWD" | sudo -S pcs cluster auth $(getUncompressedIPAddress $HB_DR_IP) -u hacluster -p samsung --force &>/dev/null
+                echo "$MANO_PWD" | sudo -S pcs cluster node add $(getUncompressedIPAddress $HB_DR_IP) --force &>/dev/null
+        fi
+        echo "$MANO_PWD" | sudo -S pcs cluster start --all --force &>/dev/null
+        sleep 10
+}
+
+setPacemakerResources()
+{
+        for resource in $OP_VIP_RESOURCES
+        do
+                echo "$MANO_PWD" | sudo -S pcs resource group remove SCMR_RESOURCES $resource &>/dev/null
+                echo "$MANO_PWD" | sudo -S pcs constraint colocation add $resource with SCMR_RESOURCES score=INFINITY &>/dev/null
+                echo "$MANO_PWD" | sudo -S pcs constraint location $resource avoids $HOSTNAME_DR_NODE_C &>/dev/null
+                sleep 2
+        done
+
+        echo "$MANO_PWD" | sudo -S pcs resource create INFRA_SETUP lsb:infra_setup op monitor interval=30s timeout=180s start timeout=180s stop timeout=30s &>/dev/null
+        sleep 2
+        echo "$MANO_PWD" | sudo -S pcs constraint colocation add INFRA_SETUP with SCMR_RESOURCES score=INFINITY &>/dev/null
+        sleep 2
+}
+
+setSelinux()
+{
+    local LEVEL=$1
+    echo "$MANO_PWD" | sudo -S setenforce $LEVEL &>/dev/null
+    ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S setenforce $LEVEL" &>/dev/null
+    ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S setenforce $LEVEL" &>/dev/null
+}
+
+printHead
+getCounterNodeIp
+getDomain
+getManoPasswd
+settingSshScp $IPV
+
+getNodeInfo
+validateNodeInfo
+checkProceed
+
+####### Start HA ######
+setSelinux 0
+breakDownPacemaker
+setHostInfo
+dbCluster
+fileSystemSync
+setPacemakerCluter
+setPacemakerResources
+setSelinux 1
