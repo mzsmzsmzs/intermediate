@@ -1,0 +1,40 @@
+--- RHEL7.9_makeGR.sh
++++ RHEL8.10_makeGR.sh
+@@ -510,7 +510,7 @@ setPacemakerResources()
+ 
+-        echo "$MANO_PWD" | sudo -S pcs resource create INFRA_SETUP lsb:infra_setup op monitor interval=30s timeout=180s start timeout=180s stop timeout=30s &>/dev/null
++        echo "$MANO_PWD" | sudo -S pcs resource create INFRA_SETUP ocf:heartbeat:infra_setup op monitor interval=30s timeout=180s start timeout=180s stop timeout=30s &>/dev/null
+ 
+@@ -220,7 +220,7 @@ findResource()
+-        grep 'provider="heartbeat" type="IPaddr2"' $CIB_FILE
++        grep 'provider="ocf" type="IPaddr2"' $CIB_FILE
+
+--- RHEL7.9_makeGR.sh
++++ RHEL8.10_makeGR.sh
+@@ -430,7 +430,7 @@ startSyncService()
+-        echo "$MANO_PWD" | sudo -S systemctl enable syncthing@mano.service &>/dev/null
++        echo "$MANO_PWD" | sudo -S systemctl enable --now syncthing@mano.service &>/dev/null
+
+@@ -445,7 +445,7 @@ startSyncService()
+-        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S systemctl enable syncthing@mano.service &>/dev/null;"
++        ${SSH_CMD}${HB_OP_IP2} "echo "$MANO_PWD" | sudo -S systemctl enable --now syncthing@mano.service &>/dev/null;"
+
+@@ -460,7 +460,7 @@ startSyncService()
+-        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S systemctl enable syncthing@mano.service &>/dev/null;"
++        ${SSH_CMD}${HB_DR_IP} "echo "$MANO_PWD" | sudo -S systemctl enable --now syncthing@mano.service &>/dev/null;"
+
+Area
+RHEL 7.9 Code
+RHEL 8.10 Required Change
+Pacemaker resource
+lsb:infra_setup
+ocf:heartbeat:infra_setup
+Grep provider
+provider="heartbeat"
+provider="ocf"
+Syncthing systemd
+systemctl enable
+systemctl enable --now
+
+
+
